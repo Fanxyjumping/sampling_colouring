@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图像分割课程设计 · 控制台</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+/* ── Reset ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Design tokens ──────────────────────────────────────────────────── */
+:root {
+  --bg:          #0d1117;
+  --panel:       #161b22;
+  --panel-2:     #1c2128;
+  --border:      #30363d;
+  --text:        #c9d1d9;
+  --text-dim:    #6e7681;
+  --accent:      #58a6ff;
+  --green:       #3fb950;
+  --yellow:      #d29922;
+  --red:         #f85149;
+  --term-bg:     #010409;
+  --term-green:  #7ee787;
+  --term-dim:    #3d4450;
+  --radius:      6px;
+}
+
+/* ── Root layout ────────────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+               'Helvetica Neue', Arial, sans-serif;
+  font-size: 13px;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════ */
+header {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.header-title h1 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.header-title .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+.header-title .dot.running { background: var(--yellow); animation: blink 1s infinite; }
+.header-title .dot.ok      { background: var(--green); }
+.header-title .dot.err     { background: var(--red); }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* ── Controls ────────────────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.field label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+input[type="text"],
+input[type="number"] {
+  background: var(--term-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, 'Courier New', monospace;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input[type="text"]   { width: 360px; }
+input[type="number"] { width: 80px;  }
+
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(88,166,255,0.12);
+}
+
+#btn-run {
+  background: #1a7f37;
+  border: 1px solid #2ea043;
+  border-radius: var(--radius);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 20px;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#btn-run:hover:not(:disabled) {
+  background: #2ea043;
+  transform: translateY(-1px);
+}
+#btn-run:active:not(:disabled) { transform: translateY(0); }
+#btn-run:disabled {
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.btn-icon { font-size: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN AREA
+   ═══════════════════════════════════════════════════════════════════════ */
+main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Panel label (shared) ────────────────────────────────────────────── */
+.panel-bar {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 14px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TERMINAL (LEFT)
+   ═══════════════════════════════════════════════════════════════════════ */
+#terminal-col {
+  flex: 0 0 54%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+#terminal {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--term-bg);
+  padding: 10px 14px 14px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code',
+               'SF Mono', Menlo, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--term-green);
+  word-break: break-all;
+}
+
+/* Scrollbar */
+#terminal::-webkit-scrollbar       { width: 6px; }
+#terminal::-webkit-scrollbar-track { background: transparent; }
+#terminal::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+.log-line { white-space: pre-wrap; }
+
+/* Colour classes applied by JS */
+.c-sep  { color: var(--term-dim); }
+.c-err  { color: var(--red); }
+.c-ok   { color: var(--green); }
+.c-warn { color: var(--yellow); }
+.c-info { color: var(--accent); }
+.c-dim  { color: #444c56; }
+
+/* Blinking cursor at idle */
+#cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--term-green);
+  vertical-align: text-bottom;
+  animation: blink 1.1s step-start infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   IMAGES (RIGHT)
+   ═══════════════════════════════════════════════════════════════════════ */
+#images-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.img-card {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  min-height: 140px;
+}
+.img-card:last-child { border-bottom: none; }
+
+.img-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0c10;
+  color: var(--text-dim);
+  font-size: 11px;
+  gap: 6px;
+}
+
+.img-placeholder .ph-icon {
+  font-size: 22px;
+  opacity: 0.25;
+}
+
+.img-card img {
+  width: 100%;
+  flex: 1;
+  object-fit: contain;
+  background: #08090c;
+  display: block;
+  min-height: 0;
+}
+
+/* Loading spinner */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Save-decision bar ───────────────────────────────────────────────── */
+#save-bar {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  background: #1a2030;
+  border-top: 1px solid #3a7bd5;
+  flex-shrink: 0;
+}
+#save-bar .save-label {
+  font-family: 'JetBrains Mono', Menlo, monospace;
+  font-size: 12px;
+  color: var(--accent);
+  flex: 1;
+}
+.btn-save {
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 18px;
+  border: 1px solid;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.btn-save:hover  { opacity: 0.85; transform: translateY(-1px); }
+.btn-save:active { transform: translateY(0); }
+.btn-save.yes { background: #1a7f37; border-color: #2ea043; color: #fff; }
+.btn-save.no  { background: transparent; border-color: var(--red); color: var(--red); }
+
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER ═══════════════════════════════════════ -->
+<header>
+  <div class="header-title">
+    <div class="dot" id="status-dot"></div>
+    <h1>🔬 图像分割课程设计</h1>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label>图片路径</label>
+      <input type="text" id="img-path"
+             placeholder="/path/to/image.jpg"
+             value="">
+    </div>
+
+    <div class="field">
+      <label>K 值</label>
+      <input type="number" id="k-val" value="100" min="1" max="100000">
+    </div>
+
+    <button id="btn-run" onclick="handleRun()">
+      <span class="btn-icon">▶</span> 运行
+    </button>
+  </div>
+</header>
+
+<!-- ═══════════════════ MAIN ═════════════════════════════════════════ -->
+<main>
+
+  <!-- ── Terminal ──────────────────────────────────────────────────── -->
+  <div id="terminal-col">
+    <div class="panel-bar">
+      <span>⬛</span> 程序输出
+    </div>
+    <div id="terminal"><span id="cursor"></span></div>
+
+    <!-- Save-decision bar (hidden until save_prompt event) -->
+    <div id="save-bar">
+      <span class="save-label">💾 是否将结果图片保存到磁盘？</span>
+      <button class="btn-save yes" onclick="sendSaveDecision('y')">✓ 保存 (Y)</button>
+      <button class="btn-save no"  onclick="sendSaveDecision('n')">✗ 不保存 (N)</button>
+    </div>
+  </div>
+
+  <!-- ── Images ────────────────────────────────────────────────────── -->
+  <div id="images-col">
+
+    <div class="img-card" id="card-seeds">
+      <div class="panel-bar">① 种子点标注图</div>
+      <div class="img-placeholder" id="ph-seeds">
+        <span class="ph-icon">🌱</span>
+        <span>等待运行…</span>
+      </div>
+    </div>
+
+    <div class="img-card" id="card-watershed">
+      <div class="panel-bar">② Watershed 过分割</div>
+      <div class="img-placeholder" id="ph-watershed">
+        <span class="ph-icon">🌊</span>
+        <span>等待运行…</span>
+      </div>
+    </div>
+
+    <div class="img-card" id="card-coloring">
+      <div class="panel-bar">③ 四色着色结果</div>
+      <div class="img-placeholder" id="ph-coloring">
+        <span class="ph-icon">🎨</span>
+        <span>等待运行…</span>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- ═══════════════════ JAVASCRIPT ═══════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── Socket.IO ─────────────────────────────────────────────────────────
+const socket  = io();
+const $term   = document.getElementById('terminal');
+const $cursor = document.getElementById('cursor');
+const $dot    = document.getElementById('status-dot');
+const $btn    = document.getElementById('btn-run');
+
+// ── Status dot ────────────────────────────────────────────────────────
+function setStatus(state) {
+  $dot.className = 'dot ' + state;
+  $dot.title = { running: '运行中…', ok: '完成', err: '出错', '': '空闲' }[state] ?? '';
+}
+
+// ── Terminal: append a log line with colour hints ─────────────────────
+function appendLog(text) {
+  // Remove cursor, append line, re-add cursor
+  $cursor.remove();
+
+  const div = document.createElement('div');
+  div.className = 'log-line';
+
+  // Classify for colouring
+  if (/^[═─=─┄\s]+$/.test(text))            div.classList.add('c-sep');
+  else if (/\[错误\]|ERROR|\[FAIL\]/.test(text)) div.classList.add('c-err');
+  else if (/✓|成功|\[PASS\]|PASS/.test(text))   div.classList.add('c-ok');
+  else if (/⚠|失败|\[WARN\]|WARN/.test(text))   div.classList.add('c-warn');
+  else if (/^  [▶═]/.test(text))                div.classList.add('c-info');
+  else if (/^\s*$/.test(text))                   div.classList.add('c-dim');
+
+  div.textContent = text;
+  $term.appendChild(div);
+  $term.appendChild($cursor);
+  $term.scrollTop = $term.scrollHeight;
+}
+
+// ── Images: replace placeholder with <img> ────────────────────────────
+function showImage(id, b64) {
+  const card = document.getElementById('card-' + id);
+  const ph   = document.getElementById('ph-' + id);
+  if (!card) return;
+
+  // Remove old image if any
+  const oldImg = card.querySelector('img');
+  if (oldImg) oldImg.remove();
+
+  // Hide placeholder
+  if (ph) ph.style.display = 'none';
+
+  const img = document.createElement('img');
+  img.src = 'data:image/png;base64,' + b64;
+  img.alt = id;
+  card.appendChild(img);
+}
+
+// ── Set placeholder to "loading" spinner ─────────────────────────────
+function setPlaceholderLoading(id, label) {
+  const ph = document.getElementById('ph-' + id);
+  if (!ph) return;
+  ph.style.display = '';
+  ph.innerHTML = `<div class="spinner"></div><span>${label}</span>`;
+
+  // Remove old image
+  const card = document.getElementById('card-' + id);
+  const old  = card && card.querySelector('img');
+  if (old) old.remove();
+}
+
+// ── Reset image panels ────────────────────────────────────────────────
+const IMAGE_DEFS = [
+  { id: 'seeds',     icon: '🌱', label: '等待运行…' },
+  { id: 'watershed', icon: '🌊', label: '等待运行…' },
+  { id: 'coloring',  icon: '🎨', label: '等待运行…' },
+];
+
+function resetImages() {
+  IMAGE_DEFS.forEach(({ id, icon, label }) => {
+    const card = document.getElementById('card-' + id);
+    const ph   = document.getElementById('ph-' + id);
+    const old  = card && card.querySelector('img');
+    if (old) old.remove();
+    if (ph) {
+      ph.style.display = '';
+      ph.innerHTML = `<span class="ph-icon">${icon}</span><span>${label}</span>`;
+    }
+  });
+}
+
+// ── Run button handler ────────────────────────────────────────────────
+function handleRun() {
+  const imagePath = document.getElementById('img-path').value.trim();
+  const kRaw      = document.getElementById('k-val').value;
+  const kValue    = parseInt(kRaw, 10);
+
+  if (!imagePath) {
+    alert('请输入图片路径');
+    return;
+  }
+  if (!kValue || kValue <= 0) {
+    alert('K 必须为正整数');
+    return;
+  }
+
+  // Reset UI
+  $term.innerHTML = '';
+  $term.appendChild($cursor);
+  resetImages();
+
+  // Show spinners on all three cards while running
+  setPlaceholderLoading('seeds',     '任务一运行中…');
+  setPlaceholderLoading('watershed', '任务一运行中…');
+  setPlaceholderLoading('coloring',  '任务二运行中…');
+
+  $btn.disabled = true;
+  setStatus('running');
+
+  socket.emit('run', { image_path: imagePath, k_value: kValue });
+}
+
+// ── Allow Enter key in inputs to trigger run ──────────────────────────
+['img-path', 'k-val'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleRun();
+  });
+});
+
+// ── Socket events ─────────────────────────────────────────────────────
+socket.on('log', ({ text }) => appendLog(text));
+
+socket.on('image', ({ id, data }) => showImage(id, data));
+
+socket.on('done', ({ success }) => {
+  appendLog('');
+  appendLog(success ? '  ✓  全部完成' : '  ⚠  程序结束（部分结果可能缺失）');
+  setStatus(success ? 'ok' : 'err');
+  $btn.disabled = false;
+
+  // Reset spinners on cards that didn't get an image
+  IMAGE_DEFS.forEach(({ id, icon }) => {
+    const card = document.getElementById('card-' + id);
+    if (card && !card.querySelector('img')) {
+      const ph = document.getElementById('ph-' + id);
+      if (ph) {
+        ph.style.display = '';
+        ph.innerHTML = `<span class="ph-icon">${icon}</span><span>本次未生成</span>`;
+      }
+    }
+  });
+});
+
+// ── Save-decision prompt ──────────────────────────────────────────────
+socket.on('save_prompt', () => {
+  const bar = document.getElementById('save-bar');
+  bar.style.display = 'flex';
+  appendLog('');
+  appendLog('  💾 图片已推送至浏览器，是否同时保存到磁盘？');
+  // Keyboard shortcut: y / n
+  document.addEventListener('keydown', _saveKeyHandler);
+});
+
+function _saveKeyHandler(e) {
+  if (e.key === 'y' || e.key === 'Y') sendSaveDecision('y');
+  else if (e.key === 'n' || e.key === 'N') sendSaveDecision('n');
+}
+
+function sendSaveDecision(choice) {
+  document.getElementById('save-bar').style.display = 'none';
+  document.removeEventListener('keydown', _saveKeyHandler);
+  socket.emit('save_decision', { choice });
+  appendLog(choice === 'y'
+    ? '  → 已选择保存，文件保留在项目目录。'
+    : '  → 已选择不保存，临时文件已删除。');
+}
+
+socket.on('connect', () => appendLog('  已连接到后端服务器'));
+socket.on('disconnect', () => {
+  appendLog('  [警告] 与服务器断开连接');
+  setStatus('err');
+  $btn.disabled = false;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Compiled binary
+sampling_colouring
+debug_color
+debug_color_asan
+
+# Object files & debug symbols
+*.o
+*.dSYM/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Result images (generated at runtime)
+result_seeds.png
+result_watershed.png
+result_coloring.png
+result/*/
+
+# macOS metadata
+.DS_Store
